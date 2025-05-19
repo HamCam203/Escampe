@@ -1,116 +1,151 @@
 package escampe;
 
-import java.net.*;
-import java.io.*;
-import java.lang.reflect.*;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.util.StringTokenizer;
 
 /**
- * Client réseau permettant de faire circuler les coups sous forme de messages
- * vers et depuis l'arbitre via une connexion réseau.
+ * Cette classe permet de charger dynamiquement une classe de joueur, qui doit obligatoirement
+ * implanter l'interface IJoueur. Vous lui donnez aussi en argument le nom de la machine distante
+ * (ou "localhost") sur laquelle le serveur de jeu est lancé, ainsi que le port sur lequel la
+ * machine écoute.
+ * 
+ * Exemple: >java -cp . frontieres.ClientJeu frontieres.joueurProf localhost 1234
+ * 
+ * Le client s'occupe alors de tout en lançant les méthodes implantées de l'interface IJoueur. Toute
+ * la gestion réseau est donc cachée.
+ * 
+ * @author L. Simon (Univ. Paris-Sud)- 2006-2008
+ * @see IJoueur
  */
 public class ClientJeu {
-    private Socket socket;
-    private PrintWriter out;
-    private BufferedReader in;
-    private IJoueur joueur;
-    
+
+    // Mais pas lors de la conversation avec l'arbitre
+    // Vous pouvez changer cela en interne si vous le souhaitez
+    static final int BLANC = -1;
+    static final int NOIR = 1;
+    static final int VIDE = 0;
+
     /**
-     * Charge dynamiquement la classe de joueur et établit une connexion avec le serveur
+     * @param args
+     *            Dans l'ordre : NomClasseJoueur MachineServeur PortEcoute
      */
-    public ClientJeu(String nomClasseJoueur, String hote, int port) throws Exception {
-        // Charger la classe de joueur
-        Class<?> classeJoueur = Class.forName(nomClasseJoueur);
-        Constructor<?> constructeur = classeJoueur.getConstructor();
-        joueur = (IJoueur) constructeur.newInstance();
-        
-        // Se connecter au serveur
-        socket = new Socket(hote, port);
-        out = new PrintWriter(socket.getOutputStream(), true);
-        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        
-        System.out.println("Connexion établie avec " + hote + ":" + port);
-        System.out.println("Joueur chargé : " + nomClasseJoueur);
-    }
-    
-    /**
-     * Boucle principale du client
-     */
-    public void jouer() throws IOException {
-        String message;
-        String[] parties;
-        String couleur = "";
-        String nomAdversaire = "";
-        String position = "";
-        String coup;
-        
-        while ((message = in.readLine()) != null) {
-            System.out.println("Reçu: " + message);
-            
-            parties = message.split(" ");
-            String commande = parties[0];
-            
-            switch (commande) {
-                case "INIT":
-                    // Initialisation du joueur
-                    couleur = parties[1];
-                    nomAdversaire = parties[2];
-                    joueur.initJoueur(couleur);
-                    joueur.nomAdversaire(nomAdversaire);
-                    System.out.println("Joueur initialisé, couleur: " + couleur + ", adversaire: " + nomAdversaire);
-                    break;
-                    
-                case "JOUER":
-                    // Demande de jouer un coup
-                    position = parties[1];
-                    coup = joueur.jouerCoup(position);
-                    out.println(coup);
-                    System.out.println("Coup joué: " + coup);
-                    break;
-                    
-                case "COUP":
-                    // Notification d'un coup de l'adversaire
-                    String coupAdversaire = parties[1];
-                    joueur.coupAdversaire(coupAdversaire);
-                    System.out.println("Coup adversaire reçu: " + coupAdversaire);
-                    break;
-                    
-                case "FINPARTIE":
-                    // Fin de partie
-                    String resultat = parties[1];
-                    joueur.finPartie(resultat);
-                    System.out.println("Partie terminée, résultat: " + resultat);
-                    break;
-                    
-                case "SORTIR":
-                    // Demande de sortie
-                    System.out.println("Demande de sortie reçue, fermeture de la connexion.");
-                    socket.close();
-                    return;
-                    
-                default:
-                    System.out.println("Commande inconnue: " + commande);
-                    break;
-            }
-        }
-    }
-    
     public static void main(String[] args) {
-        if (args.length != 3) {
-            System.out.println("Usage: java escampe.ClientJeu <classeJoueur> <hote> <port>");
-            System.out.println("Exemple: java escampe.ClientJeu escampe.MonIA localhost 1234");
-            System.exit(1);
-        }
-        
-        String classeJoueur = args[0];
-        String hote = args[1];
-        int port = Integer.parseInt(args[2]);
-        
-        try {
-            ClientJeu client = new ClientJeu(classeJoueur, hote, port);
-            client.jouer();
-        } catch (Exception e) {
-            System.err.println("Erreur: " + e.getMessage());
-            e.printStackTrace();
-        }
+    	
+    	if (args.length < 3) {
+    		System.err.println("ClientJeu Usage: NomClasseJoueur MachineServeur PortEcoute");
+    		System.exit(1);
+    	}
+    	
+    	// Le nom de la classe joueur à charger dynamiquement
+    	String classeJoueur = args[0];
+    	// Le nom de la machine serveur a été donné en ligne de commande
+    	String serverMachine = args[1];
+    	// Le numéro du port sur lequel on se connecte a aussi été donné
+    	int portNum = Integer.parseInt(args[2]);
+    	
+    	System.out.println("Le client se connectera sur " + serverMachine + ":" + portNum);
+    	
+    	Socket clientSocket = null;
+    	IJoueur joueur;
+    	String msg, firstToken;
+    	// permet d'analyser les chaînes de caractères lues
+    	StringTokenizer msgTokenizer;
+    	// C'est la couleur qui doit jouer le prochain coup
+    	int couleurAJouer;
+    	// C'est ma couleur (quand je joue)
+    	int maCouleur;
+    	
+    	boolean jeuTermine = false;
+    	
+    	try {
+    		// initialise la socket
+    		clientSocket = new Socket(serverMachine, portNum);
+    		PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+    		BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+    		
+    		// *****************************************************
+    		System.out.print("Chargement de la classe joueur " + classeJoueur + "... ");
+    		Class<?> cjoueur = Class.forName(classeJoueur);
+    		joueur = (IJoueur) cjoueur.newInstance();
+    		System.out.println("Ok");
+    		// ****************************************************
+    		
+    		// Envoie de l'identifiant de votre quadrinome.
+    		out.println(joueur.binoName());
+    		System.out.println("Mon nom de quadrinome envoyé est " + joueur.binoName());
+    		
+    		// Récupère le message sous forme de chaine de caractères
+    		msg = in.readLine();
+	    	System.out.println(msg);
+	    	
+	    	// Lit le contenu du message, toutes les infos du message
+	    	msgTokenizer = new StringTokenizer(msg, " \n\0");
+	    	if ((msgTokenizer.nextToken()).equals("Blanc")) {
+	    		System.out.println("Je suis Blanc, j'attends le mouvement de Noir.");
+	    		maCouleur = BLANC;
+	    	}
+	    	else { // doit etre égal à "Noir"
+	    		System.out.println("Je suis Noir, c'est à moi de jouer.");
+	    		maCouleur = NOIR;
+	    	}
+	    	
+	    	// permet d'initialiser votre joueur avec sa couleur
+	    	joueur.initJoueur(maCouleur);
+	    	
+	    	// boucle générale de jeu
+	    	do {
+	    		// Lire le msg à partir du serveur
+	    		msg = in.readLine();
+	    		
+	    		msgTokenizer = new StringTokenizer(msg, " \n\0");
+	    		firstToken = msgTokenizer.nextToken();
+	    		
+	    		if (firstToken.equals("FIN!")) {
+	    			jeuTermine = true;
+	    			String theWinnerIs = msgTokenizer.nextToken();
+	    			
+	    			if (theWinnerIs.equals("Blanc")) {
+	    				couleurAJouer = BLANC;
+	    			}
+	    			else {
+	    				if (theWinnerIs.equals("Noir"))
+	    					couleurAJouer = NOIR;
+	    				else
+	    					couleurAJouer = VIDE;
+	    			}
+	    			
+	    			if (couleurAJouer == maCouleur)
+	    				System.out.println("J'ai gagné!");
+	    			
+	    			joueur.declareLeVainqueur(couleurAJouer);
+	    		}
+	    		else if (firstToken.equals("JOUEUR")) {
+	    			// On demande au joueur de jouer
+	    			if ((msgTokenizer.nextToken()).equals("Blanc")) {
+	    				couleurAJouer = BLANC;
+	    			}
+	    			else {
+	    				couleurAJouer = NOIR;
+	    			}
+	    			
+	    			if (couleurAJouer == maCouleur) {
+	    				// On appelle la classe du joueur pour choisir un mouvement
+	    				msg = joueur.choixMouvement();
+	    				out.println(msg);
+	    			}
+	    		}
+	    		else if (firstToken.equals("MOUVEMENT")) {
+	    			// On lit ce que joue le joueur et on l'envoie à l'autre
+	    			joueur.mouvementEnnemi(msgTokenizer.nextToken());
+	    		}
+	    	} while (!jeuTermine);
+	    	
+    	}
+    	catch (Exception e) {
+    		System.out.println(e);
+    	}
     }
 }
