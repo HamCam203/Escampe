@@ -18,6 +18,19 @@ public class MonJoueur implements IJoueur {
         {3,2,2,1,3,2}
     };
 
+    // Valeurs stratégiques des lisères (plus c'est élevé, mieux c'est)
+    private static final int[] VALEUR_LISERE = {0, 1, 2, 3};
+    
+    // Valeurs stratégiques des positions sur le plateau
+    private static final int[][] VALEUR_POSITION = {
+        {3, 4, 4, 5, 3, 4}, // Ligne 0
+        {5, 3, 5, 3, 5, 4}, // Ligne 1
+        {4, 5, 3, 4, 3, 5}, // Ligne 2
+        {4, 3, 5, 4, 5, 3}, // Ligne 3
+        {3, 5, 3, 5, 3, 4}, // Ligne 4
+        {5, 4, 4, 3, 5, 4}  // Ligne 5
+    };
+
     private int lastLisere = 0;
     private boolean initialDone = false;
     private static final Random rand = new Random();
@@ -44,9 +57,10 @@ public class MonJoueur implements IJoueur {
         try {
             if (!initialDone) {
                 initialDone = true;
-                String placement = (couleur == NOIR)
-                        ? "A1/A2/B1/B2/C1/C2"
-                        : "A5/A6/B5/B6/C5/C6";
+                // Utiliser un placement intelligent au lieu d'un placement fixe
+                String placement = placementIntelligent();
+                
+                // Mettre à jour le plateau avec notre placement
                 for (String pos : placement.split("/")) {
                     int c = pos.charAt(0) - 'A';
                     int r = Integer.parseInt(pos.substring(1)) - 1;
@@ -56,7 +70,7 @@ public class MonJoueur implements IJoueur {
             }
 
             List<String> legalMoves = genererCoups(couleur, lastLisere, plateau);
-            if (legalMoves.isEmpty()) return "E";
+            if (legalMoves.isEmpty()) return "PASSE";
 
             String best = null;
             int bestScore = Integer.MIN_VALUE;
@@ -79,8 +93,94 @@ public class MonJoueur implements IJoueur {
 
         } catch (Exception e) {
             System.err.println("[ERREUR IA] " + e.getMessage());
-            return "E";
+            e.printStackTrace();
+            return "PASSE";
         }
+    }
+    
+    /**
+     * Détermine un placement initial intelligent des pièces
+     * @return Une chaîne au format "A1/B2/C3/D4/E5/F6"
+     */
+    private String placementIntelligent() {
+        List<Position> positions = new ArrayList<>();
+        int startRow, endRow;
+        
+        // Déterminer les lignes où nous pouvons placer nos pièces
+        if (couleur == NOIR) {
+            startRow = 0;
+            endRow = 1;
+        } else { // BLANC
+            startRow = 4;
+            endRow = 5;
+        }
+        
+        // Évaluer chaque position possible
+        List<PositionEvaluee> evaluations = new ArrayList<>();
+        for (int r = startRow; r <= endRow; r++) {
+            for (int c = 0; c < 6; c++) {
+                int score = evaluerPositionInitiale(r, c);
+                evaluations.add(new PositionEvaluee(r, c, score));
+            }
+        }
+        
+        // Trier les positions par score décroissant
+        Collections.sort(evaluations, (a, b) -> b.score - a.score);
+        
+        // Sélectionner les 6 meilleures positions
+        StringBuilder placement = new StringBuilder();
+        for (int i = 0; i < 6; i++) {
+            PositionEvaluee pe = evaluations.get(i);
+            if (i > 0) placement.append("/");
+            placement.append(toPos(pe.row, pe.col));
+        }
+        
+        return placement.toString();
+    }
+    
+    /**
+     * Évalue la valeur stratégique d'une position pour le placement initial
+     */
+    private int evaluerPositionInitiale(int row, int col) {
+        int score = 0;
+        
+        // Valeur de la lisère (plus c'est élevé, mieux c'est)
+        score += VALEUR_LISERE[LISERE[row][col]] * 10;
+        
+        // Valeur stratégique de la position
+        score += VALEUR_POSITION[row][col] * 5;
+        
+        // Bonus pour les positions centrales
+        int distanceCentreX = Math.abs(col - 2);
+        int distanceCentreY = Math.abs(row - 2);
+        score += (6 - distanceCentreX - distanceCentreY) * 2;
+        
+        // Bonus pour les positions qui contrôlent plus de cases
+        score += calculerCasesControlees(row, col) * 3;
+        
+        return score;
+    }
+    
+    /**
+     * Calcule combien de cases une pièce peut contrôler depuis cette position
+     */
+    private int calculerCasesControlees(int row, int col) {
+        int count = 0;
+        int max = LISERE[row][col];
+        int[][] dirs = {{1,0}, {-1,0}, {0,1}, {0,-1}};
+        
+        for (int[] d : dirs) {
+            int nr = row, nc = col;
+            for (int step = 1; step <= max; step++) {
+                nr += d[0];
+                nc += d[1];
+                if (nr >= 0 && nr < 6 && nc >= 0 && nc < 6) {
+                    count++;
+                }
+            }
+        }
+        
+        return count;
     }
 
     private int minmax(int[][] board, int depth, boolean maximizing, int player, int lisere) {
@@ -104,12 +204,29 @@ public class MonJoueur implements IJoueur {
 
     private int heuristique(int[][] board, int player) {
         int score = 0;
+        
+        // Compter les pièces
+        int piecesSelf = 0;
+        int piecesOpponent = 0;
+        
         for (int r = 0; r < 6; r++) {
             for (int c = 0; c < 6; c++) {
-                if (board[r][c] == player) score += 1;
-                else if (board[r][c] == -player) score -= 1;
+                if (board[r][c] == player) {
+                    piecesSelf++;
+                    // Bonus pour les pièces avec une lisère élevée
+                    score += VALEUR_LISERE[LISERE[r][c]] * 2;
+                    // Bonus pour la mobilité (nombre de cases contrôlées)
+                    score += calculerCasesControlees(r, c);
+                } 
+                else if (board[r][c] == -player) {
+                    piecesOpponent++;
+                }
             }
         }
+        
+        // Différence de pièces (facteur le plus important)
+        score += (piecesSelf - piecesOpponent) * 10;
+        
         return score;
     }
 
@@ -177,7 +294,7 @@ public class MonJoueur implements IJoueur {
 
     @Override
     public void mouvementEnnemi(String coup) {
-        if ("E".equals(coup)) {
+        if ("PASSE".equals(coup)) {
             lastLisere = 0;
             return;
         }
@@ -214,5 +331,25 @@ public class MonJoueur implements IJoueur {
 
     private String toPos(int r, int c) {
         return "" + (char)('A' + c) + (r + 1);
+    }
+    
+    // Classes utilitaires pour le placement intelligent
+    private static class Position {
+        final int row;
+        final int col;
+        
+        Position(int row, int col) {
+            this.row = row;
+            this.col = col;
+        }
+    }
+    
+    private static class PositionEvaluee extends Position {
+        final int score;
+        
+        PositionEvaluee(int row, int col, int score) {
+            super(row, col);
+            this.score = score;
+        }
     }
 }
