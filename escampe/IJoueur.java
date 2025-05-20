@@ -1,5 +1,8 @@
 package escampe;
 
+/**
+ * java -cp "escampe/escampeobf.jar;." escampe.ClientJeu escampe.JoueurIntelligent localhost 1234
+ */
 
 /**
  * Voici l'interface abstraite qu'il suffit d'implanter pour jouer. Ensuite, vous devez utiliser
