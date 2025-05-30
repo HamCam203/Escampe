@@ -1,0 +1,3 @@
+jar: SkitouCamara.jar
+clientClass: escampe.ClientJeu
+mainClass: escampe.MonJoueur
