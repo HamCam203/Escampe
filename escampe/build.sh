@@ -10,19 +10,23 @@ JAR_NAME="SkitouCamara.jar"
 rm -rf "$OUT_DIR" "$JAR_NAME" mainClass
 mkdir -p "$OUT_DIR"
 
-# 3. Compilation de **tous** les .java du répertoire courant
+# 3. Compilation de toutes les sources (prof + IA)
 javac -cp "$PROF_JAR" -d "$OUT_DIR" *.java
 
-# 4. Création du JAR avec tout ce qui a été compilé
-#    (cela inclut à la fois le package escampe et d'éventuelles classes hors package)
-jar cf "$JAR_NAME" -C "$OUT_DIR" .
+# 4. Création du JAR final ne contenant que VOS classes IA
+(
+  cd "$OUT_DIR"
+  jar cf "../$JAR_NAME" \
+    escampe/MonJoueur*.class \
+    escampe/Solo*.class
+)
 
-# 5. Génération du fichier mainClass
+# 5. Génération du fichier mainClass pour eCampus
 cat <<EOF > mainClass
 jar: $JAR_NAME
 clientClass: escampe.ClientJeu
 mainClass: escampe.MonJoueur
 EOF
 
-echo "✔ Jar généré : $JAR_NAME"
+echo "✔ JAR généré : $JAR_NAME"
 echo "✔ Fichier mainClass créé"
