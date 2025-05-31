@@ -1,18 +1,23 @@
 ## Terminal 1 (serveur)
 
 cd C:\Users\cskit\Desktop\PoPS\APP5\IA\Escampe\escampe
+
 java -cp "escampeobf.jar;SkitouCamara.jar" escampe.ServeurJeu 1234 1
 
 
 
 Terminal 2 (client du prof)
 
-cd C:\Users\cskit\Desktop\PoPS\APP5\IA\Escampe
-java -cp ".;escampe\escampeobf.jar;escampe\SkitouCamara.jar" escampe.ClientJeu escampe.JoueurHumain localhost 1234
+cd C:\Users\cskit\Desktop\PoPS\APP5\IA\Escampe\escampe
+
+java -cp "escampeobf.jar;SkitouCamara.jar" escampe.ClientJeu escampe.JoueurHumain localhost 1234
+
+
 
 Terminal 3 (notre IA)
 
 cd C:\Users\cskit\Desktop\PoPS\APP5\IA\Escampe
+
 java -cp ".;escampe\escampeobf.jar;escampe\SkitouCamara.jar" escampe.ClientJeu escampe.MonJoueur localhost 1234
 
 
